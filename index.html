@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, minimal-ui">
+    <title>Calippor - Command Line Pipelines Generator</title>
+    <link href='https://fonts.googleapis.com/css?family=Roboto:300,400,500,700' rel="stylesheet">
+    <!-- <link href="https://fonts.googleapis.com/css?family=Material+Icons" rel="stylesheet"> -->
+    <link href="https://use.fontawesome.com/releases/v5.0.13/css/all.css" rel="stylesheet">
+    <link href="https://unpkg.com/vuetify@1.0.17/dist/vuetify.min.css" rel="stylesheet">
+    <link rel="icon" href="http://cgenomics.org/wp-content/uploads/2019/04/logo.jpg">
+</head>
+<body>
+    <div class="container body-content">
+        <div id="app" v-cloak>
+            <v-app>
+                <router-view></router-view>
+            </v-app>
+        </div>
+    </div>
+    <script src="https://cdn.jsdelivr.net/npm/vue@2.5.13/dist/vue.js"></script>
+    <script src="https://unpkg.com/http-vue-loader"></script>
+    <script src="https://unpkg.com/vue-router/dist/vue-router.js"></script>
+    <script src="https://unpkg.com/vuetify@1.0.17/dist/vuetify.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/axios/0.19.0/axios.min.js"></script>
+    <script src="params.js"></script>
+    <script>
+        Vue.use(VueRouter);
+        var home = Vue.component("Home", {
+            template: `
+            <div>
+                <v-container fill-height>
+                    <v-layout>
+                        <v-flex>
+                            <h2>{{ appName }}</h2>
+                            <span class="subheading">{{ appDesc }}</span>
+                            <v-divider class="my-3"></v-divider>
+                            <v-card-text>
+                                <v-chip v-for="chip in params" :key="chip.id" class="mr-2" :color="params_color[chip.id]" @click="showParams(chip.id)">
+                                {{setLabel(chip)}}
+                                </v-chip>
+                            </v-card-text>
+                            <v-divider class="my-3"></v-divider>
+
+                            <v-form ref="form" lazy-validation>
+                                <div class="title" v-for="id in params_chips">
+                                    <img v-if="params[id-1].required" src="http://cgenomics.org/wp-content/uploads/2019/04/mandatory.png">
+                                    <v-text-field
+                                        v-if="!params[id-1].boolean"
+                                      :label="setLabel(params[id-1])"
+                                      :value="params[id-1].value"
+                                      v-model="params[id-1].value"
+                                      :placeholder="String(params[id-1].default)"
+                                      :hint="params[id-1].help"
+                                      @blur="generateCommand"
+                                    ></v-text-field>
+                                    <div v-if="params[id-1].boolean" class="input-boolean">                                    
+                                        <h5>{{setLabel(params[id-1])}}</h5>
+                                        <h6>{{params[id-1].help}}</h6>
+                                        <v-switch v-model="params[id-1].value" @change="generateCommand" class="mx-2"></v-switch>                                    
+                                        <hr>
+                                    </div>
+                                </div>                            
+                            </v-form>
+                            
+                            <v-divider class="my-3"></v-divider>
+                            <p v-if="errors.length">
+                                <b>Please correct the following error(s):</b>
+                                <ul>
+                                  <li v-for="error in errors" :key="error"><div class="alert alert-warning-phy" role="alert">{{ error }}</div></li>
+                                </ul>
+                            </p>
+                            <h3>Command</h3>
+                            <textarea class="form-control rounded-0" name="command" label="" v-model="command" disabled></textarea>
+                            <v-divider class="my-3"></v-divider>
+                        </v-flex>
+                    </v-layout>
+                    <v-layout>
+                    <v-footer height="auto">
+                      <v-card class="flex" flat tile >
+                        <v-card-title class="teal">
+                          <strong class="subheading-footer">Calippor - cgenomics.org</strong>                  
+                          <v-spacer></v-spacer>                  
+                          <v-btn v-for="icon in icons" :key="icon.id" class="mx-3" dark icon :href="icon.url" target="_blank">
+                            <v-icon size="24px">{{ icon.logo }}</v-icon>
+                          </v-btn>
+                        </v-card-title>                  
+                        <v-card-actions class="grey justify-center">
+                          &copy;2019
+                        </v-card-actions>
+                      </v-card>
+                    </v-footer>
+                    </v-layout>
+                </v-container>
+            </div>
+          `,
+            props: ["title"],
+            data: function () {
+                return {
+                    url: '',
+                    appName: '',
+                    appDesc: '',
+                    appScript: '',
+                    default_folder: '/put-your-default-folder-here/',
+                    count: 0,
+                    command: '',
+                    params: [],
+                    params_chips: [],
+                    params_color: [],                    
+                    errors: [],
+                    icons: [
+                        { 'id': 1, 'logo': 'fab fa-twitter', 'url': 'https://twitter.com/ManuTRILH'},
+                        { 'id': 2, 'logo': 'fab fa-linkedin', 'url': 'https://www.linkedin.com/in/manumolinamarin/'},
+                        { 'id': 3, 'logo': 'fas fa-link', 'url': 'http://cgenomics.org'},
+                    ],
+
+                }
+            },
+            methods: {
+                setLabel(param) {
+                    if (param.abrev != "") return String(param.abrev+' / '+param.label)
+                    else return String(param.label)
+                },
+                generateCommand() {
+                    let result = this.appScript
+                    let head = ''
+                    this.params_chips.forEach((id) => {
+                        head = ''                   
+                        let param = this.params[id-1]
+                        if (param.value != null) {
+                            if (param.boolean) {
+                                if (param.value) {
+                                    if (param.abrev) result += ' ' + param.abrev
+                                    else result += ' ' + param.label
+                                }
+                            } else {
+                                if (param.is_dir) head = this.default_folder
+                                if (param.abrev != '') result += ' ' + param.abrev + ' ' + head + param.value
+                                else result += ' ' + param.label + ' ' + head + param.value
+                            }
+                        }
+                    })
+                    this.command = result
+                },
+                showParams(chip) {
+                    let exists = this.params_chips.indexOf(chip)
+                    if (exists == -1) {
+                        // this.params_chips.push(chip)
+                        this.params_chips = [chip].concat(this.params_chips)
+                        this.params_color[chip] = 'primary'
+                    } else {
+                        this.params_chips.splice(exists, 1)
+                        this.params_color[chip] = ''
+                    }
+                    this.generateCommand()
+                },
+            },
+            created() {
+                this.appName = json[0];
+                this.appDesc = json[3];
+                this.appScript = json[1];
+                this.params = json[2];
+                this.params.forEach((param) => {
+                    if (param.default) this.showParams(param.id)
+                });
+
+                this.generateCommand()
+            },
+        });
+
+        // Routes
+        const routes = [{
+                path: '/',
+                component: home
+            }
+        ]
+        const router = new VueRouter({
+            routes // short for `routes: routes`
+        })
+        // ***************************
+
+        var app = new Vue({
+            el: '#app',
+            router
+        })
+    </script>
+</body>
+<style type="text/css">
+    h2 {
+        font-size: 2em;
+    }
+    h5 {
+        padding-top: 15px;
+        font-weight: initial;
+        color: rgba(0,0,0,.54);
+    }
+    h6 {
+        color: rgba(0,0,0,.54);
+    }
+    hr {
+        padding: 0px;
+    }
+    .rounded-0 {
+        border-radius: 0;
+        border: 1px solid grey;
+        background-color: white;
+        width: 100%;
+    }
+    .container.fill-height {
+        display: grid;
+    }
+    .footer {
+        width: 100%;
+        
+    }
+    .subheading-footer {
+        color: white !important;
+    }
+    .teal {
+        background-color: #575c72 !important;
+    }
+    .input-boolean {
+        display: initial;
+    }
+    .alert {
+        color: black;
+    }
+
+</style>
+</html>
